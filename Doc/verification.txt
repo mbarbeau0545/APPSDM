@@ -1,0 +1,6 @@
+Tester :
+émettre un diag (check)
+appliquer une strzatégie après décompte (check)
+arrêté d'appliquer une stratégie  (check)
+appeler user une dernière fois avec report PASS (check)
+gérer plusieurs Diagnostic (check)
