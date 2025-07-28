@@ -18,6 +18,7 @@
 // ********************************************************************
 #include "./APP_SDM.h"
 #include "APP_CFG/ConfigFiles/APPSDM_ConfigPrivate.h"
+#include "APP_CTRL/APP_SYS/Src/APP_SYS.h"
 
 #include "FMK_HAL/FMK_CPU/Src/FMK_CPU.h"
 // ********************************************************************
@@ -176,6 +177,7 @@ t_eReturnCode APPSDM_Cyclic(void)
             Ret_e = s_APPSDM_Operational();
             if(Ret_e < RC_OK)
             {
+                ASSERT((t_uint16)Ret_e);
                 g_AppSdm_ModState_e = STATE_CYCLIC_ERROR;
             }
             break;
@@ -224,12 +226,11 @@ t_eReturnCode APPSDM_SetState(t_eCyclicModState f_State_e)
 /*********************************
  * APPSDM_ReportDiagEvnt
  *********************************/
-t_eReturnCode APPSDM_ReportDiagEvnt(    t_eAPPSDM_DiagnosticItem f_item_e,
-                                        t_eAPPSDM_DiagnosticReport f_reportState_e,
-                                        t_uint16 f_debugInfo1_u16,
-                                        t_uint16 f_debugInfo2_u16)
+void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
+                            t_eAPPSDM_DiagnosticReport f_reportState_e,
+                            t_uint16 f_debugInfo1_u16,
+                            t_uint16 f_debugInfo2_u16)
 {
-    t_eReturnCode Ret_e = RC_OK;
     t_sAPPSDM_DiagItemInfo * itemInfo_ps;
     t_uint8 idxItem_u8 = (t_uint8)0;
     t_bool initItem_b = (t_bool)True;
@@ -237,9 +238,9 @@ t_eReturnCode APPSDM_ReportDiagEvnt(    t_eAPPSDM_DiagnosticItem f_item_e,
     if((f_item_e >= APPSDM_DIAG_ITEM_NB)
     || (f_reportState_e >= APPSDM_DIAG_ITEM_STATE_NB))
     {
-        Ret_e = RC_ERROR_PARAM_INVALID;
+        ASSERT((t_uint16)0);
     }
-    if(Ret_e == RC_OK)
+    else if(APPSDM_DIAG_MNGMT_STATUS == (t_bool)TRUE)
     {
         //----- See if at least one item is active -----//
         if(g_rqstDiagMngmt_b == (t_bool)False)
@@ -265,6 +266,13 @@ t_eReturnCode APPSDM_ReportDiagEvnt(    t_eAPPSDM_DiagnosticItem f_item_e,
                     break;
                 }
             }
+            //---- if not found initItem_b still TRUE & reportState = PASS
+            //      means the diag item is no longer under control -> NO_OPE----//
+            if((initItem_b == (t_bool)True)
+            && (f_reportState_e == APPSDM_DIAG_ITEM_REPORT_PASS))
+            {
+                initItem_b = (t_bool)False;
+            }
         }
         //----- See if we have to register a new diag item -----//
         if(initItem_b == (t_bool)True)
@@ -275,7 +283,7 @@ t_eReturnCode APPSDM_ReportDiagEvnt(    t_eAPPSDM_DiagnosticItem f_item_e,
             }
             if(g_diagItemCnt_u8 >= APPSDM_MAX_DIAG_ITEM_MONITORING)
             {
-                Ret_e = RC_WARNING_BUSY;
+                ASSERT((t_uint16)g_diagItemCnt_u8);
             }
             else 
             {
@@ -290,7 +298,7 @@ t_eReturnCode APPSDM_ReportDiagEvnt(    t_eAPPSDM_DiagnosticItem f_item_e,
                 //---- check if actions has to be set now or later -----//
                 if(c_AppSdm_DiagItemCfg_as[f_item_e].debuncValueMs_u16 == (t_uint16)0)
                 {
-                    Ret_e = s_APPSDM_DiagStratMngmt(c_AppSdm_DiagItemCfg_as[f_item_e].diagStrat_e,
+                    (void)s_APPSDM_DiagStratMngmt(c_AppSdm_DiagItemCfg_as[f_item_e].diagStrat_e,
                                                     APPSDM_DIAG_STRAT_INHIBIT_ON);
 
                     itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_ON;    
@@ -307,7 +315,7 @@ t_eReturnCode APPSDM_ReportDiagEvnt(    t_eAPPSDM_DiagnosticItem f_item_e,
         }
     }
 
-    return Ret_e;
+    return;
 }
 
 /*********************************
@@ -418,7 +426,7 @@ static void s_APPSDM_FoundFreeIdx(void)
 
     if(g_MaxIdxRegistration_u8 < APPSDM_MAX_DIAG_ITEM_MONITORING)
     {
-        g_freeItemIdx_u8 += (t_uint8)1;
+        g_freeItemIdx_u8 = (t_uint8)(g_MaxIdxRegistration_u8 + 1);
         g_MaxIdxRegistration_u8 += (t_uint8)1;
     }
     else 
@@ -460,7 +468,14 @@ static t_eReturnCode s_APPSDM_Operational(void)
         //----- Update g_MaxIdxRegistration_u8 -----//
         if(g_diagItemInfo_as[(g_MaxIdxRegistration_u8 -(t_uint8)1)].mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF)
         {
-            g_MaxIdxRegistration_u8 -= (t_uint8)1;
+            if(g_MaxIdxRegistration_u8 > (t_uint8)1)
+            {
+                g_MaxIdxRegistration_u8 -= (t_uint8)1;
+            }
+            else 
+            {
+                g_MaxIdxRegistration_u8 = (t_uint8)0;
+            }
         }
         if(g_diagItemCnt_u8 == (t_uint8)0)
         {
@@ -565,14 +580,16 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
 static t_eReturnCode s_APPSDM_DiagStratMngmt(t_eAPPSDM_DiagnosticStrat f_diagStrat_e,
                                              t_eAPPSDM_DiagStratOpe f_stratOpe_e)
 {
-    t_eReturnCode Ret_e = RC_OK;
+    t_eReturnCode Ret_e;
 
-    if(f_diagStrat_e >= APPSDM_DIAG_STRAT_NB)
+    if((f_diagStrat_e >= APPSDM_DIAG_STRAT_NB)
+    && (f_diagStrat_e != APPSDM_DIAG_STRAT_NONE))
     {
         Ret_e = RC_ERROR_PARAM_INVALID;
     }
-    if(Ret_e == RC_OK)
+    else 
     {
+        Ret_e = RC_OK;
         if(f_diagStrat_e != APPSDM_DIAG_STRAT_NONE)
         {
             c_AppSdm_DiagStragies_apf[f_diagStrat_e](f_stratOpe_e);

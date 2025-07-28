@@ -105,10 +105,10 @@
     *
     *
     */
-    t_eReturnCode APPSDM_ReportDiagEvnt(t_eAPPSDM_DiagnosticItem f_item_e,
-                                        t_eAPPSDM_DiagnosticReport f_state_e,
-                                        t_uint16 f_debugInfo1_u16,
-                                        t_uint16 f_debugInfo2_u16);
+   void APPSDM_ReportDiagEvnt(  t_eAPPSDM_DiagnosticItem f_item_e,
+                                t_eAPPSDM_DiagnosticReport f_reportState_e,
+                                t_uint16 f_debugInfo1_u16,
+                                t_uint16 f_debugInfo2_u16);
     /**
     *
     *	@brief
