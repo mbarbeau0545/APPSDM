@@ -294,7 +294,11 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
                 itemInfo_ps->itemId_e = f_item_e;
                 itemInfo_ps->reportstate_e = f_reportState_e;
                 FMKCPU_GetTick(&itemInfo_ps->reportTime_u32);
-                
+                //----- log ----//
+                FMKSRL_LOG("[%d] : New Diagnostic Item, Id ->, info1 %d: , Info2 : %d",
+                            itemInfo_ps->reportTime_u32,
+                            f_debugInfo1_u16,
+                            f_debugInfo2_u16);
                 //---- check if actions has to be set now or later -----//
                 if(c_AppSdm_DiagItemCfg_as[f_item_e].debuncValueMs_u16 == (t_uint16)0)
                 {
