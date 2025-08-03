@@ -51,9 +51,10 @@ typedef struct
     t_eAPPSDM_DiagnosticReport  reportstate_e;
     t_eAPPSDM_ItemState         mngmtState_e;
     t_uint32                    reportTime_u32;
+    t_uint32                    broadcastDelay_u32;
+    t_uint32                    dbcCounter_u32;
     t_uint16                    debugInfo1_u16;
-    t_uint16                    debugInfo2_u16;
-
+    t_uint16                    debugInfo2_u16;                 
 } t_sAPPSDM_DiagItemInfo;
 /* CAUTION : Automatic generated code section : Start */
 
@@ -234,6 +235,7 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
     t_sAPPSDM_DiagItemInfo * itemInfo_ps;
     t_uint8 idxItem_u8 = (t_uint8)0;
     t_bool initItem_b = (t_bool)True;
+    t_uint32 currentTime_u32;
 
     if((f_item_e >= APPSDM_DIAG_ITEM_NB)
     || (f_reportState_e >= APPSDM_DIAG_ITEM_STATE_NB))
@@ -242,6 +244,7 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
     }
     else if(APPSDM_DIAG_MNGMT_STATUS == (t_bool)TRUE)
     {
+        FMKCPU_GetTick(&currentTime_u32);
         //----- See if at least one item is active -----//
         if(g_rqstDiagMngmt_b == (t_bool)False)
         {
@@ -257,12 +260,14 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
             //      if it it already ON or it's a new one -----//
             for(idxItem_u8 = (t_uint8)0 ; idxItem_u8 < g_MaxIdxRegistration_u8 ; idxItem_u8++)
             {
-                if(f_item_e == g_diagItemInfo_as[idxItem_u8].itemId_e)
+                itemInfo_ps = (t_sAPPSDM_DiagItemInfo *)(&g_diagItemInfo_as[idxItem_u8]);
+                if(f_item_e == itemInfo_ps->itemId_e)
                 {
                     initItem_b = (t_bool)False;
-                    g_diagItemInfo_as[idxItem_u8].reportstate_e = f_reportState_e;
-                    g_diagItemInfo_as[idxItem_u8].debugInfo1_u16 = f_debugInfo1_u16;
-                    g_diagItemInfo_as[idxItem_u8].debugInfo2_u16 = f_debugInfo2_u16;
+                    itemInfo_ps->dbcCounter_u32++;
+                    itemInfo_ps->reportstate_e = f_reportState_e;
+                    itemInfo_ps->debugInfo1_u16 = f_debugInfo1_u16;
+                    itemInfo_ps->debugInfo2_u16 = f_debugInfo2_u16;
                     break;
                 }
             }
@@ -293,14 +298,18 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
                 itemInfo_ps->debugInfo2_u16 = f_debugInfo2_u16;
                 itemInfo_ps->itemId_e = f_item_e;
                 itemInfo_ps->reportstate_e = f_reportState_e;
-                FMKCPU_GetTick(&itemInfo_ps->reportTime_u32);
+                itemInfo_ps->reportTime_u32 = currentTime_u32;
+                itemInfo_ps->broadcastDelay_u32 = currentTime_u32;
+                itemInfo_ps->dbcCounter_u32 = (t_uint32)1;
+
                 //----- log ----//
-                FMKSRL_LOG("[%d] : New Diagnostic Item, Id ->, info1 %d: , Info2 : %d",
+                FMKSRL_LOG("[%d] : New Diagnostic Item -> %d, info1 %d: , Info2 : %d\r\n",
                             itemInfo_ps->reportTime_u32,
+                            (t_uint16)f_item_e,
                             f_debugInfo1_u16,
                             f_debugInfo2_u16);
                 //---- check if actions has to be set now or later -----//
-                if(c_AppSdm_DiagItemCfg_as[f_item_e].debuncValueMs_u16 == (t_uint16)0)
+                if(c_AppSdm_DiagItemCfg_as[f_item_e].DebuncCnt_u16 == (t_uint16)0)
                 {
                     (void)s_APPSDM_DiagStratMngmt(c_AppSdm_DiagItemCfg_as[f_item_e].diagStrat_e,
                                                     APPSDM_DIAG_STRAT_INHIBIT_ON);
@@ -513,19 +522,28 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
             //----- Diagnostic is in Debuncer State -----//
             if(f_itemInfo_ps->mngmtState_e == APPSDM_DIAG_ITEM_STATUS_DBC)
             {
-                if((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > 
-                        (t_uint32)f_itemCfg_ps->debuncValueMs_u16)
+                //---- if we haven't get another report within DebuncCnt_u16
+                //      consider the error inactive ----//
+                if(f_itemInfo_ps->dbcCounter_u32 < (t_uint32)f_itemCfg_ps->DebuncCnt_u16)
+                {
+                    if((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
+                    {
+                        f_itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
+                    }
+                }
+                //---- diag item is ON -----//
+                else 
                 {
                     f_itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_ON;
                 }
             }
             //----- Diagnostic is in ON State -----//
-            if(f_itemInfo_ps->mngmtState_e == APPSDM_DIAG_ITEM_STATUS_ON)
+            else if(f_itemInfo_ps->mngmtState_e == APPSDM_DIAG_ITEM_STATUS_ON)
             {
                 Ret_e = s_APPSDM_DiagStratMngmt(f_itemCfg_ps->diagStrat_e,
                                                 APPSDM_DIAG_STRAT_INHIBIT_ON);
 
-                if(((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > 
+                if(((currentTime_u32 - f_itemInfo_ps->broadcastDelay_u32) > 
                         (t_uint32)APPSDM_BROADCAST_TIMEOUT)
                 && (g_UserCallback_pcb != (t_cbAPPSDM_DiagEventBroadcast *)NULL_FUNCTION)
                 && (f_itemCfg_ps->notifyUser_b == (t_bool)True))
@@ -536,7 +554,12 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
                                         f_itemInfo_ps->debugInfo2_u16);
                     
                     //----- Update Report Time -----//
-                    f_itemInfo_ps->reportTime_u32 = currentTime_u32;
+                    f_itemInfo_ps->broadcastDelay_u32 = currentTime_u32;
+                }
+                //--- check if we haven't any report, to consider if OFF ----//
+                if((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
+                {
+                    f_itemInfo_ps->reportstate_e = APPSDM_DIAG_ITEM_REPORT_PASS;
                 }
             }
             
