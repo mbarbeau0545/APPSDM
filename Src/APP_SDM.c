@@ -536,6 +536,11 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
                     if((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
                     {
                         f_itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
+                        //----- Update Information -----//
+                        if(g_diagItemCnt_u8 > (t_uint8)0)
+                        {
+                            g_diagItemCnt_u8 -= (t_uint8)1;
+                        }
                     }
                 }
                 //---- diag item is ON -----//
