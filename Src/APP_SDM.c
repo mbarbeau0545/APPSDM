@@ -165,12 +165,7 @@ t_eReturnCode APPSDM_Cyclic(void)
     {
         case STATE_CYCLIC_CFG:
         {
-            g_AppSdm_ModState_e = STATE_CYCLIC_WAITING;
-            break;
-        }
-        case STATE_CYCLIC_WAITING:
-        {
-            // nothing to do just wait AppSys Signal
+            g_AppSdm_ModState_e = STATE_CYCLIC_PREOPE;
             break;
         }
         case STATE_CYCLIC_PREOPE:
