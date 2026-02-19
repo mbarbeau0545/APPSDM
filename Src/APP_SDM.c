@@ -126,12 +126,6 @@ static t_eReturnCode s_APPSDM_DiagStratMngmt(t_eAPPSDM_DiagnosticStrat f_diagStr
  *
  */
 static t_eReturnCode s_APPSDM_Operational(void);
-/**
- *
- *	@brief      Send to AppSig the diag item info.\n
- *
- */
-static void s_APPSDM_DebugRoutine(void);
 //****************************************************************************
 //                      Public functions - Implementation
 //********************************************************************************
@@ -496,8 +490,6 @@ static t_eReturnCode s_APPSDM_Operational(void)
         }
     }
 
-    s_APPSDM_DebugRoutine();
-
     return Ret_e;
 }
 
@@ -631,33 +623,6 @@ static t_eReturnCode s_APPSDM_DiagStratMngmt(t_eAPPSDM_DiagnosticStrat f_diagStr
     }
 
     return Ret_e;
-}
-
-/*********************************
- * s_APPSDM_DebugRoutine
- *********************************/
-static void s_APPSDM_DebugRoutine(void)
-{
-    t_eReturnCode Ret_e;
-    t_sint32 idxItem_s32;
-
-    for(idxItem_s32 = 0 ; idxItem_s32 < (t_sint32)APPSDM_MAX_DIAG_ITEM_MONITORING ; idxItem_s32++)
-    {
-        Ret_e = APPSIG_SetSignalValue(  c_DebugSignals_as[idxItem_s32].itemID_e,
-                                        g_diagItemInfo_as[idxItem_s32].itemId_e);
-        Ret_e |= APPSIG_SetSignalValue( c_DebugSignals_as[idxItem_s32].diagState_e,
-                                        g_diagItemInfo_as[idxItem_s32].mngmtState_e);
-        Ret_e |= APPSIG_SetSignalValue( c_DebugSignals_as[idxItem_s32].debugInfo1,
-                                        g_diagItemInfo_as[idxItem_s32].debugInfo1_u16);
-        Ret_e |= APPSIG_SetSignalValue( c_DebugSignals_as[idxItem_s32].debugInfo2,
-                                        g_diagItemInfo_as[idxItem_s32].debugInfo1_u16);
-        if(Ret_e != RC_OK)
-        {
-            ASSERT((t_uint16)0);
-        }
-    }
-
-    return;
 }
 //************************************************************************************
 // End of File
