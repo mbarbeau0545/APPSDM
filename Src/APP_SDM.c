@@ -145,6 +145,10 @@ t_eReturnCode APPSDM_Init(void)
         g_diagItemInfo_as[idxItem_u8].reportstate_e = APPSDM_DIAG_ITEM_REPORT_PASS;
         g_diagItemInfo_as[idxItem_u8].reportTime_u32 = (t_uint32)0;
     }
+    g_freeItemIdx_u8 = (t_uint8)0;
+    g_MaxIdxRegistration_u8 = (t_uint8)0;
+    g_diagItemCnt_u8 = (t_uint8)0;
+    g_rqstDiagMngmt_b = (t_bool)False;
 
     return RC_OK;
 }
@@ -390,6 +394,7 @@ t_eReturnCode APPSDM_ResetDiagEvnt(void)
 
         //----- Update max registration -----//
         g_MaxIdxRegistration_u8 = (t_uint8)0;
+        g_freeItemIdx_u8 = (t_uint8)0;
         g_diagItemCnt_u8 = (t_uint8)0;
         g_rqstDiagMngmt_b = (t_bool)False;
     }
@@ -473,7 +478,8 @@ static t_eReturnCode s_APPSDM_Operational(void)
         }
 
         //----- Update g_MaxIdxRegistration_u8 -----//
-        if(g_diagItemInfo_as[(g_MaxIdxRegistration_u8 -(t_uint8)1)].mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF)
+        if((g_MaxIdxRegistration_u8 > (t_uint8)0)
+        && (g_diagItemInfo_as[(g_MaxIdxRegistration_u8 -(t_uint8)1)].mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF))
         {
             if(g_MaxIdxRegistration_u8 > (t_uint8)1)
             {
@@ -483,6 +489,7 @@ static t_eReturnCode s_APPSDM_Operational(void)
             {
                 g_MaxIdxRegistration_u8 = (t_uint8)0;
             }
+            g_freeItemIdx_u8 = g_MaxIdxRegistration_u8;
         }
         if(g_diagItemCnt_u8 == (t_uint8)0)
         {
