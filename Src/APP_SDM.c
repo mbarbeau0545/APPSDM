@@ -21,6 +21,7 @@
 #include "APP_CTRL/APP_SYS/Src/APP_SYS.h"
 
 #include "FMK_HAL/FMK_CPU/Src/FMK_CPU.h"
+#include "Library/SafeMem/SafeMem.h"
 // ********************************************************************
 // *                      Defines
 // ********************************************************************
@@ -45,16 +46,30 @@ typedef enum
 
 /* CAUTION : Automatic generated code section for Structure: End */
 //-----------------------------STRUCT TYPES---------------------------//
+///@brief Runtime Info for diagnostic item
+typedef struct 
+{
+    t_eAPPSDM_ItemState         mngmtState_e;
+    t_uint32                    dbcCounter_u32;
+    t_uint32                    broadcastDelay_u32;
+} t_sAPPSDM_RuntimeInfo;
+
+/// @brief Diagnostic item descripter 
 typedef struct 
 {
     t_eAPPSDM_DiagnosticItem    itemId_e;
     t_eAPPSDM_DiagnosticReport  reportstate_e;
-    t_eAPPSDM_ItemState         mngmtState_e;
     t_uint32                    reportTime_u32;
-    t_uint32                    broadcastDelay_u32;
-    t_uint32                    dbcCounter_u32;
+    t_uint32                    activeDuration_u32;
     t_uint16                    debugInfo1_u16;
     t_uint16                    debugInfo2_u16;                 
+} t_sAPPSDM_DescInfo;
+
+///@brief Diagnostic item info
+typedef struct 
+{
+    t_sAPPSDM_RuntimeInfo runtime_s;
+    t_sAPPSDM_DescInfo desc_s;
 } t_sAPPSDM_DiagItemInfo;
 /* CAUTION : Automatic generated code section : Start */
 
@@ -67,22 +82,30 @@ typedef struct
 // ********************************************************************
 // *                      Variables
 // ********************************************************************
+
+///@brief
 static t_eCyclicModState g_AppSdm_ModState_e = STATE_CYCLIC_CFG;
-/**< */
-t_sAPPSDM_DiagItemInfo g_diagItemInfo_as[APPSDM_MAX_DIAG_ITEM_MONITORING];
+
+///@brief
+static t_sAPPSDM_DiagItemInfo g_diagItemInfo_as[APPSDM_MAX_DIAG_ITEM_MONITORING];
 
 /**< */
-t_bool g_rqstDiagMngmt_b = (t_bool)False;
+static t_bool g_rqstDiagMngmt_b = (t_bool)False;
 
-/**< */
-t_uint8 g_diagItemCnt_u8 = (t_uint8)0;
+///@brief 
+static t_bool g_RqstNvmOpe_b = (t_bool)FALSE;
 
-/**<  */
-t_cbAPPSDM_DiagEventBroadcast * g_UserCallback_pcb = (t_cbAPPSDM_DiagEventBroadcast *)NULL_FUNCTION;
+///@brief
+static t_uint8 g_diagItemCnt_u8 = (t_uint8)0;
 
-t_uint8 g_freeItemIdx_u8 = (t_uint8)0;
+///@brief
+static t_cbAPPSDM_DiagEventBroadcast * g_UserCallback_pcb = (t_cbAPPSDM_DiagEventBroadcast *)NULL_FUNCTION;
 
-t_uint8 g_MaxIdxRegistration_u8 = (t_uint8)0;
+///@brief
+static t_uint8 g_freeItemIdx_u8 = (t_uint8)0;
+
+///@brief
+static t_uint8 g_MaxIdxRegistration_u8 = (t_uint8)0;
 //********************************************************************************
 //                      Local functions - Prototypes
 //********************************************************************************
@@ -91,6 +114,28 @@ t_uint8 g_MaxIdxRegistration_u8 = (t_uint8)0;
  *	@brief  Update g_freeItemIdx_u8 and g_MaxIdxRegistration_u8.\n
  */
 static void s_APPSDM_FoundFreeIdx(void);
+/**
+ *
+ *	@brief      
+ *  @note       
+ *              
+ * @retval RC_OK                               @ref RC_OK
+ * @retval RC_WARNING_WRONG_STATE              @ref RC_ERROR_WARNING_STATE
+ * @retval RC_WARNING_BUSY                     @ref RC_WARNING_BUSY
+ *
+ */
+static t_eReturnCode s_APPSDM_Ope_DiagMngmt(void);
+/**
+ *
+ *	@brief      
+ *  @note       
+ *              
+ * @retval RC_OK                               @ref RC_OK
+ * @retval RC_WARNING_WRONG_STATE              @ref RC_ERROR_WARNING_STATE
+ * @retval RC_WARNING_BUSY                     @ref RC_WARNING_BUSY
+ *
+ */
+static t_eReturnCode s_APPSDM_Ope_NvmMngmt(void);
 /**
  *
  *	@brief      
@@ -117,6 +162,18 @@ static t_eReturnCode s_APPSDM_DiagStratMngmt(t_eAPPSDM_DiagnosticStrat f_diagStr
                                              t_eAPPSDM_DiagStratOpe f_stratOpe_e);
 /**
  *
+ *	@brief      Perform cfg operation for this module.\n
+ *  @note       Reach the Diagnostic Status before the system 
+ *              was turn down from NVM
+ *              
+ * @retval RC_OK                               @ref RC_OK
+ * @retval RC_WARNING_WRONG_STATE              @ref RC_ERROR_WARNING_STATE
+ * @retval RC_WARNING_BUSY                     @ref RC_WARNING_BUSY
+ *
+ */
+static t_eReturnCode s_APPSDM_CfgSts(void);
+/**
+ *
  *	@brief      Perform cyclic operation for this module.\n
  *  @note       
  *              
@@ -138,12 +195,15 @@ t_eReturnCode APPSDM_Init(void)
 
     for(idxItem_u8 = (t_uint8)0 ; idxItem_u8 < APPSDM_MAX_DIAG_ITEM_MONITORING ; idxItem_u8++)
     {
-        g_diagItemInfo_as[idxItem_u8].debugInfo1_u16 = (t_uint16)0;
-        g_diagItemInfo_as[idxItem_u8].debugInfo2_u16 = (t_uint16)0;
-        g_diagItemInfo_as[idxItem_u8].itemId_e = APPSDM_DIAG_ITEM_NB;
-        g_diagItemInfo_as[idxItem_u8].mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
-        g_diagItemInfo_as[idxItem_u8].reportstate_e = APPSDM_DIAG_ITEM_REPORT_PASS;
-        g_diagItemInfo_as[idxItem_u8].reportTime_u32 = (t_uint32)0;
+        g_diagItemInfo_as[idxItem_u8].runtime_s.broadcastDelay_u32 = (t_uint16)0;
+        g_diagItemInfo_as[idxItem_u8].runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
+        g_diagItemInfo_as[idxItem_u8].runtime_s.dbcCounter_u32 = 0U;
+        g_diagItemInfo_as[idxItem_u8].desc_s.itemId_e = APPSDM_DIAG_ITEM_NB;
+        g_diagItemInfo_as[idxItem_u8].desc_s.reportstate_e = APPSDM_DIAG_ITEM_REPORT_PASS;
+        g_diagItemInfo_as[idxItem_u8].desc_s.debugInfo1_u16 = (t_uint16)0;
+        g_diagItemInfo_as[idxItem_u8].desc_s.debugInfo2_u16 = (t_uint16)0;
+        g_diagItemInfo_as[idxItem_u8].desc_s.reportTime_u32 = (t_uint32)0;
+        g_diagItemInfo_as[idxItem_u8].desc_s.activeDuration_u32 = 0U;
     }
     g_freeItemIdx_u8 = (t_uint8)0;
     g_MaxIdxRegistration_u8 = (t_uint8)0;
@@ -163,7 +223,17 @@ t_eReturnCode APPSDM_Cyclic(void)
     {
         case STATE_CYCLIC_CFG:
         {
-            g_AppSdm_ModState_e = STATE_CYCLIC_PREOPE;
+            Ret_e = s_APPSDM_CfgSts();
+            if(Ret_e == RC_OK)
+            {
+                //--- set flag to read diagnostic from nvm ---//
+                g_rqstDiagMngmt_b = TRUE;
+                g_AppSdm_ModState_e = STATE_CYCLIC_PREOPE;
+            }
+            else if(Ret_e < RC_OK)
+            {
+                g_AppSdm_ModState_e = STATE_CYCLIC_ERROR;
+            }
             break;
         }
         case STATE_CYCLIC_PREOPE:
@@ -176,7 +246,7 @@ t_eReturnCode APPSDM_Cyclic(void)
             Ret_e = s_APPSDM_Operational();
             if(Ret_e < RC_OK)
             {
-                ASSERT((t_uint16)Ret_e);
+                ASSERT((t_sint32)Ret_e);
                 g_AppSdm_ModState_e = STATE_CYCLIC_ERROR;
             }
             break;
@@ -238,7 +308,7 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
     if((f_item_e >= APPSDM_DIAG_ITEM_NB)
     || (f_reportState_e >= APPSDM_DIAG_ITEM_STATE_NB))
     {
-        ASSERT((t_uint16)0);
+        ASSERT((t_sint32)0);
     }
     else if(APPSDM_DIAG_MNGMT_STATUS == (t_bool)TRUE)
     {
@@ -258,14 +328,16 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
             //      if it it already ON or it's a new one -----//
             for(idxItem_u8 = (t_uint8)0 ; idxItem_u8 < g_MaxIdxRegistration_u8 ; idxItem_u8++)
             {
-                itemInfo_ps = (t_sAPPSDM_DiagItemInfo *)(&g_diagItemInfo_as[idxItem_u8]);
-                if(f_item_e == itemInfo_ps->itemId_e)
+                itemInfo_ps = (&g_diagItemInfo_as[idxItem_u8]);
+
+                if(f_item_e == itemInfo_ps->desc_s.itemId_e)
                 {
                     initItem_b = (t_bool)False;
-                    itemInfo_ps->dbcCounter_u32++;
-                    itemInfo_ps->reportstate_e = f_reportState_e;
-                    itemInfo_ps->debugInfo1_u16 = f_debugInfo1_u16;
-                    itemInfo_ps->debugInfo2_u16 = f_debugInfo2_u16;
+                    itemInfo_ps->runtime_s.dbcCounter_u32++;
+                    itemInfo_ps->desc_s.reportstate_e = f_reportState_e;
+                    itemInfo_ps->desc_s.debugInfo1_u16 = f_debugInfo1_u16;
+                    itemInfo_ps->desc_s.debugInfo2_u16 = f_debugInfo2_u16;
+                    g_RqstNvmOpe_b = TRUE;
                     break;
                 }
             }
@@ -286,23 +358,24 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
             }
             if(g_diagItemCnt_u8 >= APPSDM_MAX_DIAG_ITEM_MONITORING)
             {
-                ASSERT((t_uint16)g_diagItemCnt_u8);
+                ASSERT((t_sint32)g_diagItemCnt_u8);
             }
             else 
             {
                 //----- Copy data -----//
                 itemInfo_ps = (t_sAPPSDM_DiagItemInfo *)(&g_diagItemInfo_as[g_freeItemIdx_u8]);
-                itemInfo_ps->debugInfo1_u16 = f_debugInfo1_u16;
-                itemInfo_ps->debugInfo2_u16 = f_debugInfo2_u16;
-                itemInfo_ps->itemId_e = f_item_e;
-                itemInfo_ps->reportstate_e = f_reportState_e;
-                itemInfo_ps->reportTime_u32 = currentTime_u32;
-                itemInfo_ps->broadcastDelay_u32 = currentTime_u32;
-                itemInfo_ps->dbcCounter_u32 = (t_uint32)1;
+                
+                itemInfo_ps->desc_s.debugInfo1_u16 = f_debugInfo1_u16;
+                itemInfo_ps->desc_s.debugInfo2_u16 = f_debugInfo2_u16;
+                itemInfo_ps->desc_s.itemId_e = f_item_e;
+                itemInfo_ps->desc_s.reportstate_e = f_reportState_e;
+                itemInfo_ps->desc_s.reportTime_u32 = currentTime_u32;
+                itemInfo_ps->runtime_s.broadcastDelay_u32 = currentTime_u32;
+                itemInfo_ps->runtime_s.dbcCounter_u32 = (t_uint32)1;
 
                 //----- log ----//
                 FMKSRL_LOG("[%d] : New Diagnostic Item -> %d, info1 %d: , Info2 : %d\r\n",
-                            itemInfo_ps->reportTime_u32,
+                            itemInfo_ps->desc_s.reportTime_u32,
                             (t_uint16)f_item_e,
                             f_debugInfo1_u16,
                             f_debugInfo2_u16);
@@ -312,11 +385,11 @@ void APPSDM_ReportDiagEvnt( t_eAPPSDM_DiagnosticItem f_item_e,
                     (void)s_APPSDM_DiagStratMngmt(c_AppSdm_DiagItemCfg_as[f_item_e].diagStrat_e,
                                                     APPSDM_DIAG_STRAT_INHIBIT_ON);
 
-                    itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_ON;    
+                    itemInfo_ps->runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_ON;    
                 }
                 else 
                 {
-                    itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_DBC;
+                    itemInfo_ps->runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_DBC;
                 }
 
                 //----- Update General Information -----//
@@ -359,10 +432,10 @@ t_eReturnCode APPSDM_GetDiagStatus( t_eAPPSDM_DiagnosticItem f_item_e,
             //----- Loop to know if the item is repertory -----//
             for(idxItem_u8  = (t_uint8)0 ; idxItem_u8 < g_MaxIdxRegistration_u8 ; idxItem_u8++)
             {
-                if(f_item_e == g_diagItemInfo_as[idxItem_u8].itemId_e)
+                if(f_item_e == g_diagItemInfo_as[idxItem_u8].desc_s.itemId_e)
                 {
                     itemFound_b = (t_bool)True;
-                    *f_reportState_pe = g_diagItemInfo_as[idxItem_u8].reportstate_e;
+                    *f_reportState_pe = g_diagItemInfo_as[idxItem_u8].desc_s.reportstate_e;
                     break;
                 }
             }
@@ -389,7 +462,7 @@ t_eReturnCode APPSDM_ResetDiagEvnt(void)
         //----- Loop to know if the item is repertory -----//
         for(idxItem_u8  = (t_uint8)0 ; idxItem_u8 < g_MaxIdxRegistration_u8 ; idxItem_u8++)
         {
-           g_diagItemInfo_as[idxItem_u8].mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF; 
+           g_diagItemInfo_as[idxItem_u8].runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF; 
         }
 
         //----- Update max registration -----//
@@ -447,7 +520,7 @@ static void s_APPSDM_FoundFreeIdx(void)
         //      if the array is now free -----//
         for(idxItem_u8 = (t_uint8)0 ; idxItem_u8 < APPSDM_MAX_DIAG_ITEM_MONITORING ; idxItem_u8++)
         {
-            if(g_diagItemInfo_as[idxItem_u8].mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF)
+            if(g_diagItemInfo_as[idxItem_u8].runtime_s.mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF)
             {
                 g_freeItemIdx_u8 = idxItem_u8;
                 break;
@@ -458,42 +531,147 @@ static void s_APPSDM_FoundFreeIdx(void)
 }
 
 /*********************************
+ * s_APPSDM_CfgSts
+ *********************************/
+static t_eReturnCode s_APPSDM_CfgSts(void)
+{
+    t_eReturnCode Ret_e = RC_OK;
+    static t_uint8 s_IdxItem_u8 = 0;
+
+    while((s_IdxItem_u8 < APPSDM_MAX_DIAG_ITEM_MONITORING) && (Ret_e == RC_OK))
+    {
+        t_sAPPSDM_DiagItemInfo * ItemInfo_ps = &g_diagItemInfo_as[s_IdxItem_u8];
+        t_eFMKNVM_ObjectId NvmObjID_e = c_AppSdm_ObjectRegistID_ae[s_IdxItem_u8];
+        t_sAPPSDM_DescInfo descItemInfo_s;
+        Ret_e = FMKNVM_GetObject(   NvmObjID_e,
+                                    (void *)&descItemInfo_s,
+                                    sizeof(descItemInfo_s));
+        if(Ret_e == RC_OK)
+        {
+            
+            Ret_e = SafeMem_memcpy( (void *)&ItemInfo_ps->desc_s,
+                                    (const void *)&descItemInfo_s,
+                                    sizeof(descItemInfo_s));
+
+            if(Ret_e == RC_OK)
+            {
+                s_IdxItem_u8++;
+
+                //--- update runtime mngmt status ---//
+                if(descItemInfo_s.reportstate_e == APPSDM_DIAG_ITEM_REPORT_FAIL)
+                {
+                    ItemInfo_ps->runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_DBC;
+                    ItemInfo_ps->runtime_s.dbcCounter_u32 = 1;
+                }
+            }
+        }
+        else if(Ret_e == RC_WARNING_NVM_OBJECT_NOT_AVAILABLE)
+        {
+            //---- EEPROM corrupted ----//
+            s_IdxItem_u8++;
+            Ret_e = RC_OK;
+
+            //--- set flag to push default value anyway --//
+            if(g_RqstNvmOpe_b == FALSE)
+            {
+                g_RqstNvmOpe_b = TRUE;
+            }
+        }
+    }
+
+    return Ret_e;
+}
+
+/*********************************
  * s_APPSDM_Operational
  *********************************/
 static t_eReturnCode s_APPSDM_Operational(void)
 {
     t_eReturnCode Ret_e = RC_OK;
-    t_uint8 idxItem_u8;
-
     //----- Diagnostic Managment Requested -----//
     if(g_rqstDiagMngmt_b == (t_bool)True)
     {
-        for(idxItem_u8 = (t_uint8)0 ; idxItem_u8 < g_MaxIdxRegistration_u8 ; idxItem_u8++)
-        {
-            if(g_diagItemInfo_as[idxItem_u8].mngmtState_e != APPSDM_DIAG_ITEM_STATUS_OFF)
-            {
-                Ret_e = s_APPSDM_DiagnosticMngmt(   &g_diagItemInfo_as[idxItem_u8], 
-                                                    &c_AppSdm_DiagItemCfg_as[idxItem_u8]);
-            }
-        }
+        Ret_e = s_APPSDM_Ope_DiagMngmt();
+    }
 
-        //----- Update g_MaxIdxRegistration_u8 -----//
-        if((g_MaxIdxRegistration_u8 > (t_uint8)0)
-        && (g_diagItemInfo_as[(g_MaxIdxRegistration_u8 -(t_uint8)1)].mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF))
+    if((Ret_e == RC_OK)
+    && (g_RqstNvmOpe_b == TRUE))
+    {
+        Ret_e = s_APPSDM_Ope_NvmMngmt();
+        if(Ret_e == RC_OK)
         {
-            if(g_MaxIdxRegistration_u8 > (t_uint8)1)
-            {
-                g_MaxIdxRegistration_u8 -= (t_uint8)1;
-            }
-            else 
-            {
-                g_MaxIdxRegistration_u8 = (t_uint8)0;
-            }
-            g_freeItemIdx_u8 = g_MaxIdxRegistration_u8;
+            g_RqstNvmOpe_b = FALSE;
         }
-        if(g_diagItemCnt_u8 == (t_uint8)0)
+    }
+
+    return Ret_e;
+}
+
+/*********************************
+ * s_APPSDM_Ope_DiagMngmt
+ *********************************/
+static t_eReturnCode s_APPSDM_Ope_DiagMngmt(void)
+{
+    t_eReturnCode Ret_e = RC_OK;
+    t_uint8 idxItem_u8;
+
+    for(idxItem_u8 = (t_uint8)0 ; idxItem_u8 < g_MaxIdxRegistration_u8 ; idxItem_u8++)
+    {
+        if(g_diagItemInfo_as[idxItem_u8].runtime_s.mngmtState_e != APPSDM_DIAG_ITEM_STATUS_OFF)
         {
-            g_rqstDiagMngmt_b = (t_bool)False;
+            Ret_e = s_APPSDM_DiagnosticMngmt(   &g_diagItemInfo_as[idxItem_u8], 
+                                                &c_AppSdm_DiagItemCfg_as[idxItem_u8]);
+        }
+    }
+
+    //----- Update g_MaxIdxRegistration_u8 -----//
+    if((g_MaxIdxRegistration_u8 > (t_uint8)0)
+    && (g_diagItemInfo_as[(g_MaxIdxRegistration_u8 -(t_uint8)1)].runtime_s.mngmtState_e == APPSDM_DIAG_ITEM_STATUS_OFF))
+    {
+        if(g_MaxIdxRegistration_u8 > (t_uint8)1)
+        {
+            g_MaxIdxRegistration_u8 -= (t_uint8)1;
+        }
+        else 
+        {
+            g_MaxIdxRegistration_u8 = (t_uint8)0;
+        }
+        g_freeItemIdx_u8 = g_MaxIdxRegistration_u8;
+    }
+    if(g_diagItemCnt_u8 == (t_uint8)0)
+    {
+        g_rqstDiagMngmt_b = (t_bool)False;
+    }
+
+    return Ret_e;
+}
+
+/*********************************
+ * s_APPSDM_Ope_NvmMngmt
+ *********************************/
+static t_eReturnCode s_APPSDM_Ope_NvmMngmt(void)
+{
+    t_eReturnCode Ret_e;
+
+    Ret_e = RC_OK;
+
+    for(t_uint8 idxItem_u8 = 0; 
+        (idxItem_u8 < APPSDM_MAX_DIAG_ITEM_MONITORING) && (Ret_e == RC_OK) ; 
+    idxItem_u8++)
+    {
+        t_sAPPSDM_DiagItemInfo * ItemInfo_ps = &g_diagItemInfo_as[idxItem_u8];
+        t_eFMKNVM_ObjectId NvmObjID_e = c_AppSdm_ObjectRegistID_ae[idxItem_u8];
+
+        Ret_e = FMKNVM_SetObject(   NvmObjID_e,
+                                    (const void *)&ItemInfo_ps->desc_s,
+                                    (t_uint32)sizeof(ItemInfo_ps->desc_s));
+        if(Ret_e == RC_WARNING_NO_OPERATION)
+        {
+            Ret_e = RC_OK;
+        }
+        else if(Ret_e < RC_OK)
+        {
+            ASSERT((t_sint32)Ret_e);
         }
     }
 
@@ -518,18 +696,18 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
     {
         FMKCPU_GetTick(&currentTime_u32);
         //----- Diagnostic is still Repertory as ON -----//
-        if(f_itemInfo_ps->reportstate_e == APPSDM_DIAG_ITEM_REPORT_FAIL)
+        if(f_itemInfo_ps->desc_s.reportstate_e == APPSDM_DIAG_ITEM_REPORT_FAIL)
         {
             //----- Diagnostic is in Debuncer State -----//
-            if(f_itemInfo_ps->mngmtState_e == APPSDM_DIAG_ITEM_STATUS_DBC)
+            if(f_itemInfo_ps->runtime_s.mngmtState_e == APPSDM_DIAG_ITEM_STATUS_DBC)
             {
                 //---- if we haven't get another report within DebuncCnt_u16
                 //      consider the error inactive ----//
-                if(f_itemInfo_ps->dbcCounter_u32 < (t_uint32)f_itemCfg_ps->DebuncCnt_u16)
+                if(f_itemInfo_ps->runtime_s.dbcCounter_u32 < (t_uint32)f_itemCfg_ps->DebuncCnt_u16)
                 {
-                    if((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
+                    if((currentTime_u32 - f_itemInfo_ps->desc_s.reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
                     {
-                        f_itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
+                        f_itemInfo_ps->runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
                         //----- Update Information -----//
                         if(g_diagItemCnt_u8 > (t_uint8)0)
                         {
@@ -540,32 +718,32 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
                 //---- diag item is ON -----//
                 else 
                 {
-                    f_itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_ON;
+                    f_itemInfo_ps->runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_ON;
                 }
             }
             //----- Diagnostic is in ON State -----//
-            else if(f_itemInfo_ps->mngmtState_e == APPSDM_DIAG_ITEM_STATUS_ON)
+            else if(f_itemInfo_ps->runtime_s.mngmtState_e == APPSDM_DIAG_ITEM_STATUS_ON)
             {
                 Ret_e = s_APPSDM_DiagStratMngmt(f_itemCfg_ps->diagStrat_e,
                                                 APPSDM_DIAG_STRAT_INHIBIT_ON);
 
-                if(((currentTime_u32 - f_itemInfo_ps->broadcastDelay_u32) > 
+                if(((currentTime_u32 - f_itemInfo_ps->runtime_s.broadcastDelay_u32) > 
                         (t_uint32)APPSDM_BROADCAST_TIMEOUT)
                 && (g_UserCallback_pcb != (t_cbAPPSDM_DiagEventBroadcast *)NULL_FUNCTION)
                 && (f_itemCfg_ps->notifyUser_b == (t_bool)True))
                 {
-                    g_UserCallback_pcb( f_itemInfo_ps->itemId_e,
+                    g_UserCallback_pcb( f_itemInfo_ps->desc_s.itemId_e,
                                         APPSDM_DIAG_ITEM_REPORT_FAIL,
-                                        f_itemInfo_ps->debugInfo1_u16,
-                                        f_itemInfo_ps->debugInfo2_u16);
+                                        f_itemInfo_ps->desc_s.debugInfo1_u16,
+                                        f_itemInfo_ps->desc_s.debugInfo2_u16);
                     
                     //----- Update Report Time -----//
-                    f_itemInfo_ps->broadcastDelay_u32 = currentTime_u32;
+                    f_itemInfo_ps->runtime_s.broadcastDelay_u32 = currentTime_u32;
                 }
                 //--- check if we haven't any report, to consider if OFF ----//
-                if((currentTime_u32 - f_itemInfo_ps->reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
+                if((currentTime_u32 - f_itemInfo_ps->desc_s.reportTime_u32) > f_itemCfg_ps->unactiveDelay_u32)
                 {
-                    f_itemInfo_ps->reportstate_e = APPSDM_DIAG_ITEM_REPORT_PASS;
+                    f_itemInfo_ps->desc_s.reportstate_e = APPSDM_DIAG_ITEM_REPORT_PASS;
                 }
             }
             
@@ -575,7 +753,7 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
             //----- If the State is ON, call user one last time 
             //      to tell him that is done, else the diagnostic 
             //      is still in debouncer mode -----//
-            if(f_itemInfo_ps->mngmtState_e == APPSDM_DIAG_ITEM_STATUS_ON )
+            if(f_itemInfo_ps->runtime_s.mngmtState_e == APPSDM_DIAG_ITEM_STATUS_ON )
             {
                 //----- DeInhibit Function -----//
                 Ret_e = s_APPSDM_DiagStratMngmt(f_itemCfg_ps->diagStrat_e,
@@ -585,10 +763,10 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
                 if((g_UserCallback_pcb != (t_cbAPPSDM_DiagEventBroadcast *)NULL_FUNCTION)
                 && (f_itemCfg_ps->notifyUser_b == (t_bool)True))
                 {
-                    g_UserCallback_pcb( f_itemInfo_ps->itemId_e,
+                    g_UserCallback_pcb( f_itemInfo_ps->desc_s.itemId_e,
                                         APPSDM_DIAG_ITEM_REPORT_PASS,
-                                        f_itemInfo_ps->debugInfo1_u16,
-                                        f_itemInfo_ps->debugInfo2_u16);    
+                                        f_itemInfo_ps->desc_s.debugInfo1_u16,
+                                        f_itemInfo_ps->desc_s.debugInfo2_u16);    
                 }
                 
             }
@@ -598,9 +776,10 @@ static t_eReturnCode s_APPSDM_DiagnosticMngmt(  t_sAPPSDM_DiagItemInfo * f_itemI
             {
                 g_diagItemCnt_u8 -= (t_uint8)1;
             }
-            f_itemInfo_ps->mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
-            f_itemInfo_ps->debugInfo1_u16 = (t_uint16)0;
-            f_itemInfo_ps->debugInfo2_u16 = (t_uint16)0;
+
+            f_itemInfo_ps->runtime_s.mngmtState_e = APPSDM_DIAG_ITEM_STATUS_OFF;
+            f_itemInfo_ps->desc_s.debugInfo1_u16 = (t_uint16)0;
+            f_itemInfo_ps->desc_s.debugInfo2_u16 = (t_uint16)0;
         }
     }
 
